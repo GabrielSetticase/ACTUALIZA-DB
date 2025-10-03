@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import time
 import msaccessdb
+import threading
 
 import platform
 
@@ -18,18 +19,18 @@ class DatabaseEngineError(Exception):
 class ConversorCuiles:
     def __init__(self, root):
         self.root = root
-        self.root.title("Conversor de CUILES")
-        self.root.geometry("600x400")
+        self.root.title("Conversor de CUILES y Periodos")
+        self.root.geometry("600x450")
         
         # Comprobar y mostrar la arquitectura de Python
         py_arch = platform.architecture()[0]
-        self.root.title(f"Conversor de CUILES (Python {py_arch})")
+        self.root.title(f"Conversor de CUILES y Periodos (Python {py_arch})")
 
         # Establecer nombre predeterminado para el archivo de destino en una ruta simple
         temp_db_dir = "C:\\temp_db"
         if not os.path.exists(temp_db_dir):
             os.makedirs(temp_db_dir)
-        self.default_output_path = os.path.join(temp_db_dir, "cuiles.mdb")
+        self.default_output_path = os.path.join(temp_db_dir, "cordobaAux.mdb")
         
         # Configuración de la interfaz
         self.setup_ui()
@@ -43,18 +44,31 @@ class ConversorCuiles:
         title_label = tk.Label(main_frame, text="Conversor de CUILES", font=("Arial", 16, "bold"))
         title_label.pack(pady=(0, 20))
         
-        # Selección de archivo origen
-        source_frame = tk.Frame(main_frame)
-        source_frame.pack(fill=tk.X, pady=5)
+        # Selección de archivo origen (CUILES)
+        source_cuiles_frame = tk.Frame(main_frame)
+        source_cuiles_frame.pack(fill=tk.X, pady=5)
         
-        source_label = tk.Label(source_frame, text="Archivo origen (.odb, .accdb):", width=20, anchor="w")
-        source_label.pack(side=tk.LEFT)
+        source_cuiles_label = tk.Label(source_cuiles_frame, text="Archivo CUILES (.odb, .accdb):", width=25, anchor="w")
+        source_cuiles_label.pack(side=tk.LEFT)
         
-        self.source_entry = tk.Entry(source_frame)
-        self.source_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.source_cuiles_entry = tk.Entry(source_cuiles_frame)
+        self.source_cuiles_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
-        source_button = tk.Button(source_frame, text="Buscar", command=self.select_source_file)
-        source_button.pack(side=tk.RIGHT)
+        source_cuiles_button = tk.Button(source_cuiles_frame, text="Buscar", command=lambda: self.select_source_file('cuiles'))
+        source_cuiles_button.pack(side=tk.RIGHT)
+
+        # Selección de archivo origen (PERIODOS)
+        source_periodos_frame = tk.Frame(main_frame)
+        source_periodos_frame.pack(fill=tk.X, pady=5)
+        
+        source_periodos_label = tk.Label(source_periodos_frame, text="Archivo PERIODOS (.odb, .accdb):", width=25, anchor="w")
+        source_periodos_label.pack(side=tk.LEFT)
+        
+        self.source_periodos_entry = tk.Entry(source_periodos_frame)
+        self.source_periodos_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        source_periodos_button = tk.Button(source_periodos_frame, text="Buscar", command=lambda: self.select_source_file('periodos'))
+        source_periodos_button.pack(side=tk.RIGHT)
         
         # Selección de archivo destino
         dest_frame = tk.Frame(main_frame)
@@ -79,8 +93,8 @@ class ConversorCuiles:
         self.progress_bar.pack(fill=tk.X)
         
         # Botón de conversión
-        convert_button = tk.Button(main_frame, text="Convertir", command=self.convert_database, bg="#4CAF50", fg="white", font=("Arial", 12, "bold"), padx=20, pady=10)
-        convert_button.pack(pady=20)
+        self.convert_button = tk.Button(main_frame, text="Convertir", command=self.start_conversion_thread, bg="#4CAF50", fg="white", font=("Arial", 12, "bold"), padx=20, pady=10)
+        self.convert_button.pack(pady=20)
         
         # Barra de estado
         self.status_var = tk.StringVar()
@@ -88,14 +102,18 @@ class ConversorCuiles:
         status_label = tk.Label(main_frame, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
         status_label.pack(side=tk.BOTTOM, fill=tk.X)
     
-    def select_source_file(self):
+    def select_source_file(self, file_type):
         file_path = filedialog.askopenfilename(
-            title="Seleccionar archivo origen",
+            title=f"Seleccionar archivo {file_type.upper()}",
             filetypes=[("Bases de datos", "*.odb;*.accdb"), ("LibreOffice Base", "*.odb"), ("Microsoft Access", "*.accdb")]
         )
         if file_path:
-            self.source_entry.delete(0, tk.END)
-            self.source_entry.insert(0, file_path)
+            if file_type == 'cuiles':
+                self.source_cuiles_entry.delete(0, tk.END)
+                self.source_cuiles_entry.insert(0, file_path)
+            elif file_type == 'periodos':
+                self.source_periodos_entry.delete(0, tk.END)
+                self.source_periodos_entry.insert(0, file_path)
     
     def select_dest_file(self):
         initial_dir = os.path.dirname(self.default_output_path)
@@ -112,55 +130,66 @@ class ConversorCuiles:
             self.dest_entry.delete(0, tk.END)
             self.dest_entry.insert(0, file_path)
     
+    def start_conversion_thread(self):
+        self.convert_button.config(state=tk.DISABLED)
+        conversion_thread = threading.Thread(target=self.convert_database)
+        conversion_thread.start()
+
     def convert_database(self):
-        source_file = self.source_entry.get()
+        source_cuiles_file = self.source_cuiles_entry.get()
+        source_periodos_file = self.source_periodos_entry.get()
         dest_file = self.dest_entry.get()
-        
-        if not source_file or not dest_file:
-            messagebox.showerror("Error", "Por favor, seleccione los archivos de origen y destino")
+
+        if not dest_file:
+            messagebox.showerror("Error", "Por favor, especifique un archivo de destino.")
             return
-        
+
+        if not source_cuiles_file and not source_periodos_file:
+            messagebox.showerror("Error", "Por favor, seleccione al menos un archivo de origen (CUILES o PERIODOS).")
+            return
+
         try:
-            # Inicializar la barra de progreso
             self.progress_var.set(0)
             self.status_var.set("Iniciando conversión...")
             self.root.update()
-            
-            # Crear una nueva base de datos Access
+
             self.create_access_database(dest_file)
             self.progress_var.set(10)
             self.root.update()
-            
-            # Conectar a la base de datos Access
+
             try:
-                # Intentar con el controlador para Access 2003 (.mdb)
                 access_conn = pyodbc.connect(f'DRIVER={{Microsoft Access Driver (*.mdb)}};DBQ={dest_file};')
                 access_cursor = access_conn.cursor()
             except pyodbc.Error:
-                # Intentar con el controlador general
                 access_conn = pyodbc.connect(f'DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={dest_file};')
                 access_cursor = access_conn.cursor()
             self.progress_var.set(20)
             self.root.update()
-            
-            # Crear la tabla en Access con la estructura requerida
-            self.create_table_structure(access_cursor)
-            self.progress_var.set(30)
-            self.root.update()
-            
-            # Extraer y convertir los datos
-            self.extract_and_convert_data(source_file, access_cursor)
-            
-            # Confirmar los cambios
+
+            if source_cuiles_file:
+                self.status_var.set("Procesando CUILES...")
+                self.create_cuiles_table_structure(access_cursor)
+                self.progress_var.set(30)
+                self.root.update()
+                self.extract_and_convert_cuiles_data(source_cuiles_file, access_cursor)
+
+            if source_periodos_file:
+                self.status_var.set("Procesando PERIODOS...")
+                self.create_periodos_table_structure(access_cursor)
+                self.progress_var.set(60)
+                self.root.update()
+                self.extract_and_convert_periodos_data(source_periodos_file, access_cursor)
+
             access_conn.commit()
             access_cursor.close()
             access_conn.close()
-            
+
             self.status_var.set("Conversión completada con éxito")
             self.progress_var.set(100)
             self.root.update()
             messagebox.showinfo("Éxito", "La conversión se ha completado correctamente")
-                
+            self.convert_button.config(state=tk.NORMAL)
+
         except DatabaseEngineError:
             self.status_var.set("Error: Falta el motor de base de datos.")
             self.progress_var.set(0)
@@ -193,7 +222,7 @@ class ConversorCuiles:
             # Para cualquier otro error, simplemente relanzar.
             raise e
     
-    def create_table_structure(self, cursor):
+    def create_cuiles_table_structure(self, cursor):
         # Crear la tabla con la estructura requerida
         cursor.execute("""
         CREATE TABLE cuiles (
@@ -228,7 +257,7 @@ class ConversorCuiles:
         )
         """)
     
-    def extract_and_convert_data(self, source_file, access_cursor):
+    def extract_and_convert_cuiles_data(self, source_file, access_cursor):
         # Mapeo de campos
         field_mapping = {
             'REMUNERACION_ENERO': 'REMUNERACION1',
@@ -376,6 +405,125 @@ class ConversorCuiles:
         self.progress_var.set(95)
         self.root.update()
 
+    def create_periodos_table_structure(self, cursor):
+        """Crea la tabla 'periodos' en la base de datos de destino."""
+        if not cursor.tables(table='periodos', tableType='TABLE').fetchone():
+            cursor.execute("""
+            CREATE TABLE periodos (
+                CUIT TEXT(11),
+                Mes TEXT(7),
+                Afiliados LONG,
+                Remuneracion DOUBLE,
+                Aporte DOUBLE,
+                Contribucion DOUBLE,
+                Depo1 DOUBLE,
+                FeDepo1 DATETIME,
+                Retencion DOUBLE,
+                CantMenor LONG,
+                RemuMenor DOUBLE,
+                CantMayor LONG,
+                RemuMayor DOUBLE,
+                intepago DOUBLE,
+                PRIMARY KEY (CUIT, Mes)
+            )
+            """)
+            cursor.commit()
+
+    def extract_and_convert_periodos_data(self, source_file, access_cursor):
+        """Transforma y carga los datos en la tabla 'periodos'."""
+        access_cursor.execute("DELETE FROM periodos")
+        access_cursor.commit()
+
+        def process_record(record):
+            cuit = record.get('CUIT')
+            anio_raw = record.get('ANIO')
+            if not cuit or not anio_raw:
+                return
+
+            anio = int(anio_raw)
+
+            for month in range(1, 13):
+                mes_str = f"{anio}-{month:02d}"
+
+                # Construir el registro para insertar
+                insert_data = {
+                    'CUIT': cuit,
+                    'Mes': mes_str,
+                    'Aporte': record.get(f'APORTE_381_{month}'),
+                    'Contribucion': record.get(f'CONTRIB_401_{month}'),
+                    'Depo1': record.get(f'APORTE_Y_CONTR_{month}'),
+                    'FeDepo1': record.get(f'FECHAPAGO_PAG_{month}'),
+                    'Retencion': record.get(f'RETENCION_471_{month}'),
+                    'Afiliados': record.get(f'BENEF_CANTPER_{month}'),
+                    'CantMayor': record.get(f'BENEF_CANTPER_{month}'),
+                    'Remuneracion': record.get(f'BENEF_NR_IMPREM_{month}'),
+                    'RemuMayor': record.get(f'BENEF_NR_IMPREM_{month}'),
+                    'CantMenor': 0,
+                    'RemuMenor': 0.00,
+                    'intepago': 0.00
+                }
+
+                # Insertar solo si hay al menos un valor no nulo para el mes (excluyendo CUIT y Mes)
+                has_data = any(v is not None for k, v in insert_data.items() if k not in ['CUIT', 'Mes'])
+
+                if has_data:
+                    # Ordenar las columnas como en la tabla de destino
+                    ordered_columns = ['CUIT', 'Mes', 'Afiliados', 'Remuneracion', 'Aporte', 'Contribucion', 'Depo1', 'FeDepo1', 'Retencion', 'CantMenor', 'RemuMenor', 'CantMayor', 'RemuMayor', 'intepago']
+                    values = [insert_data.get(col) for col in ordered_columns]
+                    placeholders = ', '.join(['?' for _ in ordered_columns])
+
+                    sql = f"INSERT INTO periodos ({', '.join(ordered_columns)}) VALUES ({placeholders})"
+                    access_cursor.execute(sql, values)
+
+
+        if source_file.endswith('.odb'):
+            temp_dir = tempfile.mkdtemp()
+            try:
+                with zipfile.ZipFile(source_file, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+
+                db_path = os.path.join(temp_dir, "database", "data")
+                if not os.path.exists(db_path):
+                    raise Exception("No se pudo encontrar la base de datos en el archivo ODB")
+
+                sqlite_conn = sqlite3.connect(os.path.join(db_path, "script"))
+                sqlite_cursor = sqlite_conn.cursor()
+
+                # Encuentra la primera tabla de usuario
+                sqlite_cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                tables = sqlite_cursor.fetchall()
+                if not tables:
+                    raise Exception("No se encontraron tablas en la base de datos ODB")
+                table_name = tables[0][0]
+
+                sqlite_cursor.execute(f'SELECT * FROM "{table_name}"')
+                columns = [desc[0] for desc in sqlite_cursor.description]
+                
+                for row in sqlite_cursor:
+                    record = dict(zip(columns, row))
+                    process_record(record)
+
+                sqlite_cursor.close()
+                sqlite_conn.close()
+            finally:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+        elif source_file.endswith('.accdb'):
+            conn_str = f'DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={source_file};'
+            source_conn = pyodbc.connect(conn_str)
+            source_cursor = source_conn.cursor()
+
+            table_name = source_cursor.tables(tableType='TABLE').fetchone()[2]
+            source_cursor.execute(f'SELECT * FROM [{table_name}]')
+
+            columns = [desc[0] for desc in source_cursor.description]
+            
+            for row in source_cursor:
+                record = dict(zip(columns, row))
+                process_record(record)
+
+            source_cursor.close()
+            source_conn.close()
 
 
 def main():
