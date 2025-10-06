@@ -253,7 +253,8 @@ class ConversorCuiles:
             APORTE11 DOUBLE,
             REMUNERACION12 DOUBLE,
             APORTE12 DOUBLE,
-            tipo TEXT
+            tipo TEXT,
+            PRIMARY KEY (CUIT, ANIO, CUIL)
         )
         """)
     
@@ -475,6 +476,8 @@ class ConversorCuiles:
                     sql = f"INSERT INTO periodos ({', '.join(ordered_columns)}) VALUES ({placeholders})"
                     access_cursor.execute(sql, values)
 
+        batch_size = 1000
+        count = 0
 
         if source_file.endswith('.odb'):
             temp_dir = tempfile.mkdtemp()
@@ -502,6 +505,11 @@ class ConversorCuiles:
                 for row in sqlite_cursor:
                     record = dict(zip(columns, row))
                     process_record(record)
+                    count += 1
+                    if count % batch_size == 0:
+                        access_cursor.commit()
+
+                access_cursor.commit()
 
                 sqlite_cursor.close()
                 sqlite_conn.close()
@@ -521,6 +529,11 @@ class ConversorCuiles:
             for row in source_cursor:
                 record = dict(zip(columns, row))
                 process_record(record)
+                count += 1
+                if count % batch_size == 0:
+                    access_cursor.commit()
+            
+            access_cursor.commit()
 
             source_cursor.close()
             source_conn.close()
