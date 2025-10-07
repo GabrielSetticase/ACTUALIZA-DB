@@ -464,17 +464,13 @@ class ConversorCuiles:
                     'intepago': 0.00
                 }
 
-                # Insertar solo si hay al menos un valor no nulo para el mes (excluyendo CUIT y Mes)
-                has_data = any(v is not None for k, v in insert_data.items() if k not in ['CUIT', 'Mes'])
+                # Insertar siempre, incluso si no hay datos para el mes
+                ordered_columns = ['CUIT', 'Mes', 'Afiliados', 'Remuneracion', 'Aporte', 'Contribucion', 'Depo1', 'FeDepo1', 'Retencion', 'CantMenor', 'RemuMenor', 'CantMayor', 'RemuMayor', 'intepago']
+                values = [insert_data.get(col) for col in ordered_columns]
+                placeholders = ', '.join(['?' for _ in ordered_columns])
 
-                if has_data:
-                    # Ordenar las columnas como en la tabla de destino
-                    ordered_columns = ['CUIT', 'Mes', 'Afiliados', 'Remuneracion', 'Aporte', 'Contribucion', 'Depo1', 'FeDepo1', 'Retencion', 'CantMenor', 'RemuMenor', 'CantMayor', 'RemuMayor', 'intepago']
-                    values = [insert_data.get(col) for col in ordered_columns]
-                    placeholders = ', '.join(['?' for _ in ordered_columns])
-
-                    sql = f"INSERT INTO periodos ({', '.join(ordered_columns)}) VALUES ({placeholders})"
-                    access_cursor.execute(sql, values)
+                sql = f"INSERT INTO periodos ({', '.join(ordered_columns)}) VALUES ({placeholders})"
+                access_cursor.execute(sql, values)
 
         batch_size = 1000
         count = 0
