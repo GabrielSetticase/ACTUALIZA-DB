@@ -173,6 +173,12 @@ class ConversorCuiles:
                 self.root.update()
                 self.extract_and_convert_cuiles_data(source_cuiles_file, access_cursor)
 
+                # Crear y poblar la tabla modicuiles
+                self.status_var.set("Creando tabla modicuiles...")
+                self.create_modicuiles_table_structure(access_cursor)
+                self.populate_modicuiles_from_cuiles(access_cursor)
+                self.root.update()
+
             if source_periodos_file:
                 self.status_var.set("Procesando PERIODOS...")
                 self.create_periodos_table_structure(access_cursor)
@@ -258,6 +264,47 @@ class ConversorCuiles:
         )
         """)
     
+    def create_modicuiles_table_structure(self, cursor):
+        # Crear la tabla con la estructura requerida
+        cursor.execute("""
+        CREATE TABLE modicuiles (
+            CUIT TEXT,
+            ANIO TEXT,
+            CUIL TEXT,
+            RemuMinima1 DOUBLE,
+            RemuMinima2 DOUBLE,
+            RemuMinima3 DOUBLE,
+            RemuMinima4 DOUBLE,
+            RemuMinima5 DOUBLE,
+            RemuMinima6 DOUBLE,
+            RemuMinima7 DOUBLE,
+            RemuMinima8 DOUBLE,
+            RemuMinima9 DOUBLE,
+            RemuMinima10 DOUBLE,
+            RemuMinima11 DOUBLE,
+            RemuMinima12 DOUBLE,
+            PRIMARY KEY (CUIT, ANIO, CUIL)
+        )
+        """)
+
+    def populate_modicuiles_from_cuiles(self, access_cursor):
+        # Utilizar INSERT INTO ... SELECT para una operación masiva y eficiente
+        sql = """
+        INSERT INTO modicuiles ( 
+            CUIT, ANIO, CUIL, 
+            RemuMinima1, RemuMinima2, RemuMinima3, RemuMinima4, 
+            RemuMinima5, RemuMinima6, RemuMinima7, RemuMinima8, 
+            RemuMinima9, RemuMinima10, RemuMinima11, RemuMinima12 
+        )
+        SELECT 
+            CUIT, ANIO, CUIL, 
+            REMUNERACION1, REMUNERACION2, REMUNERACION3, REMUNERACION4, 
+            REMUNERACION5, REMUNERACION6, REMUNERACION7, REMUNERACION8, 
+            REMUNERACION9, REMUNERACION10, REMUNERACION11, REMUNERACION12
+        FROM cuiles
+        """
+        access_cursor.execute(sql)
+
     def extract_and_convert_cuiles_data(self, source_file, access_cursor):
         # Mapeo de campos
         field_mapping = {
